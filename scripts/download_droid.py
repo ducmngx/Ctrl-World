@@ -50,10 +50,39 @@ STOP = threading.Event()
 # every rate limit / server error we backed off from, so slowdowns are visible
 RETRIES = []
 
+# A 429 means the whole client is over quota, so every worker has to back off,
+# not just the one that saw the error - otherwise the rest keep the limit
+# tripped. _RESUME_AT is the shared "nobody sends until" clock.
+_CLOCK = threading.Lock()
+_RESUME_AT = 0.0
+
+
+def wait_for_slot():
+    # block while a rate-limit cooldown is in effect
+    while not STOP.is_set():
+        with _CLOCK:
+            remaining = _RESUME_AT - time.monotonic()
+        if remaining <= 0:
+            return
+        STOP.wait(min(remaining, 5))
+
+
+def start_cooldown(seconds, path, status):
+    # pause every worker, logging only when the pause actually grows
+    with _CLOCK:
+        global _RESUME_AT
+        now = time.monotonic()
+        if _RESUME_AT > now + seconds:
+            return
+        _RESUME_AT = now + seconds
+    tqdm.write(f'HTTP {status} on {path}: pausing all workers for {seconds:.0f}s '
+               f'({len(RETRIES)} rate limited so far)')
+
 
 def fetch(path, args, retries=6):
     """Download one repo file, retrying with backoff on rate limits."""
     for attempt in range(retries):
+        wait_for_slot()
         if STOP.is_set():
             return None
         try:
@@ -64,11 +93,14 @@ def fetch(path, args, retries=6):
             status = getattr(e.response, 'status_code', None)
             if status not in (429, 500, 502, 503, 504) or attempt == retries - 1:
                 raise
-            delay = min(5 * 2 ** attempt, 120) + random.uniform(0, 5)
             RETRIES.append(status)
-            tqdm.write(f'HTTP {status} on {path}, retrying in {delay:.0f}s '
-                       f'({len(RETRIES)} retries so far)')
-            STOP.wait(delay)
+            if status == 429:
+                # the quota window is 5 minutes, so wait it out rather than
+                # retrying into the same limit and extending it
+                delay = min(90 * 2 ** attempt, 600) + random.uniform(0, 15)
+            else:
+                delay = min(5 * 2 ** attempt, 60) + random.uniform(0, 5)
+            start_cooldown(delay, path, status)
     return None
 
 

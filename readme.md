@@ -136,7 +136,7 @@ Our experiments are run on one/two nodes each with 8 A100/H100 cards.
 ```bash
 python scripts/download_droid.py --local_dir ${path to droid}
 ```
-By default it only downloads the files needed below (meta, episode parquets and the 3 camera views used for training). Use `--num_chunks`/`--max_episodes_per_chunk` for a small test subset, `--full` for all camera views. Re-run to resume.
+This downloads all 95600 episodes (~370G): meta, one parquet per episode and the 3 camera views. Use `--num_chunks`/`--max_episodes_per_chunk` to grab a small test subset, and `--workers` to tune parallelism. Re-run the same command to resume; already downloaded files are skipped.
 
 (1) Since the video diffusion model are run in latent space of image encoder, we first extract the latent sapce of the video to improve training efficiency. After download the [huggingface DROID datasets](https://huggingface.co/datasets/cadene/droid_1.0.1), you can run the following command to extract latent in parrallel:
 ```bash

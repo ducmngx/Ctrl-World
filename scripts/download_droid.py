@@ -47,6 +47,8 @@ META_FILES = ['meta/info.json', 'meta/episodes.jsonl', 'meta/episodes_stats.json
 
 # set on ctrl-C / SIGTERM so queued work stops instead of running to completion
 STOP = threading.Event()
+# every rate limit / server error we backed off from, so slowdowns are visible
+RETRIES = []
 
 
 def fetch(path, args, retries=6):
@@ -62,8 +64,10 @@ def fetch(path, args, retries=6):
             status = getattr(e.response, 'status_code', None)
             if status not in (429, 500, 502, 503, 504) or attempt == retries - 1:
                 raise
-            # 429 quota is per 5 min window; back off well past it
-            delay = min(60 * 2 ** attempt, 600) + random.uniform(0, 10)
+            delay = min(5 * 2 ** attempt, 120) + random.uniform(0, 5)
+            RETRIES.append(status)
+            tqdm.write(f'HTTP {status} on {path}, retrying in {delay:.0f}s '
+                       f'({len(RETRIES)} retries so far)')
             STOP.wait(delay)
     return None
 
@@ -157,6 +161,9 @@ def main():
         os._exit(130)
     pool.shutdown()
 
+    if RETRIES:
+        print(f'{len(RETRIES)} request(s) were rate limited / retried '
+              f'(statuses: {sorted(set(RETRIES))}) - this slows the download')
     if failed:
         print(f'{len(failed)} file(s) failed, re-run the script to retry:')
         for path, err in failed[:10]:

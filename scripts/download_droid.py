@@ -39,7 +39,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from huggingface_hub import hf_hub_download
-from huggingface_hub.utils import HfHubHTTPError
+from huggingface_hub.utils import HfHubHTTPError, disable_progress_bars
 from tqdm import tqdm
 
 REPO_ID = 'cadene/droid_1.0.1'
@@ -122,6 +122,8 @@ def main():
     args.token = args.token or os.environ.get('HF_TOKEN')
 
     signal.signal(signal.SIGTERM, lambda *_: STOP.set())
+    # per-file bars from hf_hub_download would drown out the overall progress bar
+    disable_progress_bars()
     os.makedirs(args.local_dir, exist_ok=True)
 
     print(f'downloading {args.repo_id} -> {args.local_dir}')

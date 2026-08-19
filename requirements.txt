@@ -11,3 +11,5 @@ decord
 einops
 scipy
 pandas
+huggingface_hub
+hf_transfer
